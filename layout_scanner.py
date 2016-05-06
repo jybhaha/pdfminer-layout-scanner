@@ -9,12 +9,10 @@ from binascii import b2a_hex
 ### pdf-miner requirements
 ###
 
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines
-from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfparser import PDFParser, PDFDocument, PDFNoOutlines
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import PDFPageAggregator
-from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTFigure, LTImage, LTChar
+from pdfminer.layout import LAParams, LTTextBox, LTTextLine, LTFigure, LTImage
 
 def with_pdf (pdf_doc, fn, pdf_pwd, *args):
     """Open the pdf document, and apply the function, returning the results"""
@@ -25,9 +23,10 @@ def with_pdf (pdf_doc, fn, pdf_pwd, *args):
         # create a parser object associated with the file object
         parser = PDFParser(fp)
         # create a PDFDocument object that stores the document structure
-        doc = PDFDocument(parser)
+        doc = PDFDocument()
         # connect the parser and document objects
         parser.set_document(doc)
+        doc.set_parser(parser)
         # supply the password for initialization
         doc.initialize(pdf_pwd)
 
@@ -39,7 +38,7 @@ def with_pdf (pdf_doc, fn, pdf_pwd, *args):
         fp.close()
     except IOError:
         # the file doesn't exist or similar problem
-        pass
+        raise Exception ('Unable to open file '+pdf_doc)
     return result
 
 
@@ -166,12 +165,12 @@ def parse_lt_objs (lt_objs, page_number, images_folder, text=[]):
                 print >> sys.stderr, "error saving image on page", page_number, lt_obj.__repr__
         elif isinstance(lt_obj, LTFigure):
             # LTFigure objects are containers for other LT* objects, so recurse through the children
-            text_content.append(parse_lt_objs(lt_obj, page_number, images_folder, text_content))
+            text_content.append(parse_lt_objs(lt_obj._objs, page_number, images_folder, text_content))
 
     for k, v in sorted([(key,value) for (key,value) in page_text.items()]):
         # sort the page_text hash by the keys (x0,x1 values of the bbox),
         # which produces a top-down, left-to-right sequence of related columns
-        text_content.append(''.join(v))
+        text_content.append('\n'.join(v))
 
     return '\n'.join(text_content)
 
@@ -181,7 +180,7 @@ def parse_lt_objs (lt_objs, page_number, images_folder, text=[]):
 ###
 
 def _parse_pages (doc, images_folder):
-    """With an open PDFDocument object, get the pages and parse each one
+    """With an open PDFDocument object, get the pages, parse each one, and return the entire text
     [this is a higher-order function to be passed to with_pdf()]"""
     rsrcmgr = PDFResourceManager()
     laparams = LAParams()
@@ -189,15 +188,15 @@ def _parse_pages (doc, images_folder):
     interpreter = PDFPageInterpreter(rsrcmgr, device)
 
     text_content = []
-    for i, page in enumerate(PDFPage.create_pages(doc)):
+    for i, page in enumerate(doc.get_pages()):
         interpreter.process_page(page)
         # receive the LTPage object for this page
         layout = device.get_result()
         # layout is an LTPage object which may contain child objects like LTTextBox, LTFigure, LTImage, etc.
-        text_content.append(parse_lt_objs(layout, (i+1), images_folder))
+        text_content.append(parse_lt_objs(layout._objs, (i+1), images_folder))
 
     return text_content
 
 def get_pages (pdf_doc, pdf_pwd='', images_folder='/tmp'):
-    """Process each of the pages in this pdf file and return a list of strings representing the text found in each page"""
-    return with_pdf(pdf_doc, _parse_pages, pdf_pwd, *tuple([images_folder]))
+    """Process each of the pages in this pdf file and print the entire text to stdout"""
+    return '\n\n'.join(with_pdf(pdf_doc, _parse_pages, pdf_pwd, *tuple([images_folder])))
