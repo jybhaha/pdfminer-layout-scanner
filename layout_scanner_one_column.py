@@ -164,7 +164,7 @@ def parse_lt_objs (lt_objs, page_number, images_folder, text=[]):
                 print >> sys.stderr, "Error saving image on page", page_number, lt_obj.__repr__
         elif isinstance(lt_obj, LTFigure):
             # LTFigure objects are containers for other LT* objects, so recurse through the children
-            text_content.append(parse_lt_objs(lt_obj.objs, page_number, images_folder, text_content))
+            text_content.append(parse_lt_objs(lt_obj._objs, page_number, images_folder, text_content))
 
     return '\n'.join(text_content)
 
